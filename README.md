@@ -1,6 +1,8 @@
 # PuLID-Flux for ComfyUI
 [PuLID-Flux](https://github.com/ToTheBeginning/PuLID) ComfyUI implementation (Alpha version)
 
+![pulid_flux_einstein](examples/pulid_flux_einstein.png)
+
 ### :new: Version Updates
 * V0.1.0: Working node with weight, start_at, end_et support (attn_mask not working)
 
