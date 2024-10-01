@@ -4,7 +4,7 @@
 ![pulid_flux_einstein](examples/pulid_flux_einstein.png)
 
 ### :new: Version Updates
-* V0.1.0: Working node with weight, start_at, end_et support (attn_mask not working)
+* V0.1.0: Working node with weight, start_at, end_at support (attn_mask not working)
 
 ## Notes
 This project was heavily inspired by [cubiq/PuLID_ComfyUI](https://github.com/cubiq/PuLID_ComfyUI). It is just a prototype that uses some convenient model `hacks` for the encoder section. I wanted to test the model’s quality before reimplementing it in a more formal manner. For better results I recommend the `16bit` or `8bit GGUF` model version of Flux1-dev (the 8e5m2 returns blurry backgrounds). 
@@ -20,18 +20,26 @@ In the `examples` directory you'll find some basic workflows.
 For GGUF models you will need to install [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) 
 
 
- ## Installation
+## Installation
  - Install this repo into `ComfyUI/custom_nodes`
 ```
 git clone https://github.com/balazik/ComfyUI-PuLID-Flux.git
 ```
 - You need one of the mentioned `Flux.1-dev` models. Download the model into `ComfyUI/models/unet`, clip and encoder into `ComfyUI/models/clip`, VAE into `ComfyUI/models/vae`. 
- - [PuLID Flux pre-trained model](https://huggingface.co/guozinan/PuLID/blob/main/pulid_flux_v0.9.0.safetensors?download=true) goes in `ComfyUI/models/pulid/`.
- - The EVA CLIP is EVA02-CLIP-L-14-336, but should be downloaded automatically (will be located in the huggingface directory).
+- [PuLID Flux pre-trained model](https://huggingface.co/guozinan/PuLID/blob/main/pulid_flux_v0.9.0.safetensors?download=true) goes in `ComfyUI/models/pulid/`.
+- The EVA CLIP is EVA02-CLIP-L-14-336, should be downloaded automatically (will be located in the huggingface directory).
 - `facexlib` dependency needs to be installed, the models are downloaded at first use.
 - Finally you need InsightFace with [AntelopeV2](https://huggingface.co/MonsterMMORPG/tools/tree/main), the unzipped models should be placed in `ComfyUI/models/insightface/models/antelopev2`.
 
+## Known issues
+- ApplyPulidFlux doesn't work on HW with CUDA compute < v8.0, (when Flux FP8 it needs bfloat16).
+- When the ApplyPulidFlux node is disconnected after first run, the Flux model is still influenced by the node. 
+- ApplyPulidFlux attn_mask is not working (in progress).
+
 ## Credits
+
 ComfyUI/[ComfyUI](https://github.com/comfyanonymous/ComfyUI) - A powerful and modular stable diffusion GUI.
+
 [PuLID for Flux](https://github.com/ToTheBeginning/PuLID/blob/main/docs/pulid_for_flux.md) - tuning-free ID customization solution for FLUX.1-dev
+
 cubiq [PuLID_ComfyUI](https://github.com/cubiq/PuLID_ComfyUI) - PuLID ComfyUI native implementation (Thanks for the awesome work what you do Matteo :wink: ).
