@@ -260,14 +260,11 @@ class ApplyPulidFlux:
         # Am I missing something?!
         #dtype = comfy.model_management.unet_dtype()
         dtype = model.model.diffusion_model.dtype
-        # For 8bit try to use bfloat16 (else we get exception: ufunc_add_CUDA is not implemented)
-        # But only GPUs with compute capability >= 8 support CUDA, so we must check if we can
+        # Because of 8bit models we must check what cast type does the unet uses
+        # ZLUDA (Intel, AMD) & GPUs with compute capability < 8.0 don't support bfloat16 etc.
         # Issue: https://github.com/balazik/ComfyUI-PuLID-Flux/issues/6
-        if dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
-            if comfy.model_management.should_use_bf16(device):
-                dtype = torch.bfloat16
-            else:
-                dtype = torch.float16
+        if model.model.manual_cast_dtype is not None:
+            dtype = model.model.manual_cast_dtype
 
         eva_clip.to(device, dtype=dtype)
         pulid_flux.to(device, dtype=dtype)
