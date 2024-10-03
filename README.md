@@ -25,10 +25,12 @@ For GGUF models you will need to install [ComfyUI-GGUF](https://github.com/city9
 ```
 git clone https://github.com/balazik/ComfyUI-PuLID-Flux.git
 ```
+- Install all the packages listed in the `requirements.txt` file into the Python environment where you run ComfyUI. I prefer not to use automatic installation scripts, as I dislike when scripts install software without my knowledge. :wink:
 - You need one of the mentioned `Flux.1-dev` models. Download the model into `ComfyUI/models/unet`, clip and encoder into `ComfyUI/models/clip`, VAE into `ComfyUI/models/vae`. 
 - [PuLID Flux pre-trained model](https://huggingface.co/guozinan/PuLID/blob/main/pulid_flux_v0.9.0.safetensors?download=true) goes in `ComfyUI/models/pulid/`.
-- The EVA CLIP is EVA02-CLIP-L-14-336, should be downloaded automatically (will be located in the huggingface directory).
-- `facexlib` dependency needs to be installed, the models are downloaded at first use.
+- The EVA CLIP is EVA02-CLIP-L-14-336, should be downloaded automatically (will be located in the huggingface directory). If for some reason the auto-download fails (and you get face_analysis.py, **init assert 'detection' in self.models exception**), download this [EVA-CLIP](https://huggingface.co/QuanSun/EVA-CLIP/blob/main/EVA02_CLIP_L_336_psz14_s6B.pt?download=true) model manually, put the file to your `ComfyUI/models/clip`and restart ComfyUI.
+
+- `facexlib` dependency needs to be installed, the models are downloaded at first use. 
 - Finally you need InsightFace with [AntelopeV2](https://huggingface.co/MonsterMMORPG/tools/tree/main), the unzipped models should be placed in `ComfyUI/models/insightface/models/antelopev2`.
 
 ## Known issues
