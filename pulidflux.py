@@ -72,7 +72,10 @@ def forward_orig(
     y: Tensor,
     guidance: Tensor = None,
     control=None,
+    transformer_options={}
 ) -> Tensor:
+    patches_replace = transformer_options.get("patches_replace", {})
+
     if img.ndim != 3 or txt.ndim != 3:
         raise ValueError("Input img and txt tensors must have 3 dimensions.")
 
@@ -91,8 +94,22 @@ def forward_orig(
     pe = self.pe_embedder(ids)
 
     ca_idx = 0
+    blocks_replace = patches_replace.get("dit", {})
+
     for i, block in enumerate(self.double_blocks):
-        img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
+        if ("double_block", i) in blocks_replace:
+            def block_wrap(args):
+                out = {}
+                out["img"], out["txt"] = block(
+                    img=args["img"], txt=args["txt"], vec=args["vec"], pe=args["pe"])
+                return out
+
+            out = blocks_replace[("double_block", i)](
+                {"img": img, "txt": txt, "vec": vec, "pe": pe}, {"original_block": block_wrap})
+            txt = out["txt"]
+            img = out["img"]
+        else:
+            img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
 
         if control is not None: # Controlnet
             control_i = control.get("input")
@@ -106,7 +123,12 @@ def forward_orig(
             if i % self.pulid_double_interval == 0:
                 # Will calculate influence of all pulid nodes at once
                 for _, node_data in self.pulid_data.items():
-                    if torch.any((node_data['sigma_start'] >= timesteps) & (timesteps >= node_data['sigma_end'])):
+                    condition_start = node_data['sigma_start'] >= timesteps
+                    condition_end = timesteps >= node_data['sigma_end']
+                    condition = torch.logical_and(
+                        condition_start, condition_end).all()
+                    
+                    if condition:
                         img = img + node_data['weight'] * self.pulid_ca[ca_idx](node_data['embedding'], img)
                 ca_idx += 1
 
@@ -128,7 +150,13 @@ def forward_orig(
             if i % self.pulid_single_interval == 0:
                 # Will calculate influence of all nodes at once
                 for _, node_data in self.pulid_data.items():
-                    if torch.any((node_data['sigma_start'] >= timesteps) & (timesteps >= node_data['sigma_end'])):
+                    condition_start = node_data['sigma_start'] >= timesteps
+                    condition_end = timesteps >= node_data['sigma_end']
+
+                    # Combine conditions and reduce to a single boolean
+                    condition = torch.logical_and(condition_start, condition_end).all()
+
+                    if condition:
                         real_img = real_img + node_data['weight'] * self.pulid_ca[ca_idx](node_data['embedding'], real_img)
                 ca_idx += 1
             img = torch.cat((txt, real_img), 1)
