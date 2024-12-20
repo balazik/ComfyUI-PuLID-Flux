@@ -63,80 +63,121 @@ class PulidFluxModel(nn.Module):
         return self.pulid_encoder(face_embed, clip_embeds)
 
 def forward_orig(
-    self,
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    timesteps: Tensor,
-    y: Tensor,
-    guidance: Tensor = None,
-    control=None,
-) -> Tensor:
-    if img.ndim != 3 or txt.ndim != 3:
-        raise ValueError("Input img and txt tensors must have 3 dimensions.")
+        self,
+        img: Tensor,
+        img_ids: Tensor,
+        txt: Tensor,
+        txt_ids: Tensor,
+        timesteps: Tensor,
+        y: Tensor,
+        guidance: Tensor = None,
+        control = None,
+        transformer_options={},
+        attn_mask: Tensor = None,
+    ) -> Tensor:
+        patches_replace = transformer_options.get("patches_replace", {})
+        if img.ndim != 3 or txt.ndim != 3:
+            raise ValueError("Input img and txt tensors must have 3 dimensions.")
 
-    # running on sequences img
-    img = self.img_in(img)
-    vec = self.time_in(timestep_embedding(timesteps, 256).to(img.dtype))
-    if self.params.guidance_embed:
-        if guidance is None:
-            raise ValueError("Didn't get guidance strength for guidance distilled model.")
-        vec = vec + self.guidance_in(timestep_embedding(guidance, 256).to(img.dtype))
+        # running on sequences img
+        img = self.img_in(img)
+        vec = self.time_in(timestep_embedding(timesteps, 256).to(img.dtype))
+        if self.params.guidance_embed:
+            if guidance is None:
+                raise ValueError("Didn't get guidance strength for guidance distilled model.")
+            vec = vec + self.guidance_in(timestep_embedding(guidance, 256).to(img.dtype))
 
-    vec = vec + self.vector_in(y)
-    txt = self.txt_in(txt)
+        vec = vec + self.vector_in(y[:,:self.params.vec_in_dim])
+        txt = self.txt_in(txt)
 
-    ids = torch.cat((txt_ids, img_ids), dim=1)
-    pe = self.pe_embedder(ids)
+        ids = torch.cat((txt_ids, img_ids), dim=1)
+        pe = self.pe_embedder(ids)
 
-    ca_idx = 0
-    for i, block in enumerate(self.double_blocks):
-        img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
+        blocks_replace = patches_replace.get("dit", {})
+        ca_idx = 0
+        for i, block in enumerate(self.double_blocks):
+            if ("double_block", i) in blocks_replace:
+                def block_wrap(args):
+                    out = {}
+                    out["img"], out["txt"] = block(img=args["img"],
+                                                   txt=args["txt"],
+                                                   vec=args["vec"],
+                                                   pe=args["pe"],
+                                                   attn_mask=args.get("attn_mask"))
+                    return out
 
-        if control is not None: # Controlnet
-            control_i = control.get("input")
-            if i < len(control_i):
-                add = control_i[i]
-                if add is not None:
-                    img += add
+                out = blocks_replace[("double_block", i)]({"img": img,
+                                                           "txt": txt,
+                                                           "vec": vec,
+                                                           "pe": pe,
+                                                           "attn_mask": attn_mask},
+                                                          {"original_block": block_wrap})
+                txt = out["txt"]
+                img = out["img"]
+            else:
+                img, txt = block(img=img,
+                                 txt=txt,
+                                 vec=vec,
+                                 pe=pe,
+                                 attn_mask=attn_mask)
 
-        # PuLID attention
-        if self.pulid_data:
-            if i % self.pulid_double_interval == 0:
+            if control is not None: # Controlnet
+                control_i = control.get("input")
+                if i < len(control_i):
+                    add = control_i[i]
+                    if add is not None:
+                        img += add
+
+            # PuLID attention
+            if self.pulid_data and i % self.pulid_double_interval == 0:
                 # Will calculate influence of all pulid nodes at once
                 for _, node_data in self.pulid_data.items():
                     if torch.any((node_data['sigma_start'] >= timesteps) & (timesteps >= node_data['sigma_end'])):
                         img = img + node_data['weight'] * self.pulid_ca[ca_idx](node_data['embedding'], img)
                 ca_idx += 1
+        
+        img = torch.cat((txt, img), 1)
 
-    img = torch.cat((txt, img), 1)
+        for i, block in enumerate(self.single_blocks):
+            if ("single_block", i) in blocks_replace:
+                def block_wrap(args):
+                    out = {}
+                    out["img"] = block(args["img"],
+                                       vec=args["vec"],
+                                       pe=args["pe"],
+                                       attn_mask=args.get("attn_mask"))
+                    return out
 
-    for i, block in enumerate(self.single_blocks):
-        img = block(img, vec=vec, pe=pe)
+                out = blocks_replace[("single_block", i)]({"img": img,
+                                                           "vec": vec,
+                                                           "pe": pe,
+                                                           "attn_mask": attn_mask}, 
+                                                          {"original_block": block_wrap})
+                img = out["img"]
+            else:
+                img = block(img, vec=vec, pe=pe, attn_mask=attn_mask)
 
-        if control is not None: # Controlnet
-            control_o = control.get("output")
-            if i < len(control_o):
-                add = control_o[i]
-                if add is not None:
-                    img[:, txt.shape[1] :, ...] += add
+            if control is not None: # Controlnet
+                control_o = control.get("output")
+                if i < len(control_o):
+                    add = control_o[i]
+                    if add is not None:
+                        img[:, txt.shape[1]:, ...] += add
 
-        # PuLID attention
-        if self.pulid_data:
-            real_img, txt = img[:, txt.shape[1]:, ...], img[:, :txt.shape[1], ...]
-            if i % self.pulid_single_interval == 0:
-                # Will calculate influence of all nodes at once
+            # PuLID attention
+            if self.pulid_data and i % self.pulid_single_interval == 0:
+                real_img, txt = img[:, txt.shape[1]:, ...], img[:, :txt.shape[1], ...]
                 for _, node_data in self.pulid_data.items():
                     if torch.any((node_data['sigma_start'] >= timesteps) & (timesteps >= node_data['sigma_end'])):
                         real_img = real_img + node_data['weight'] * self.pulid_ca[ca_idx](node_data['embedding'], real_img)
                 ca_idx += 1
-            img = torch.cat((txt, real_img), 1)
+                img = torch.cat((txt, real_img), 1)
 
-    img = img[:, txt.shape[1] :, ...]
+        img = img[:, txt.shape[1]:, ...]
 
-    img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
-    return img
+        img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
+        return img
+
 
 def tensor_to_image(tensor):
     image = tensor.mul(255).clamp(0, 255).byte().cpu()
@@ -241,20 +282,22 @@ class ApplyPulidFlux:
             },
             "optional": {
                 "attn_mask": ("MASK", ),
+                "source_face_selection": (["largest_face","center_face"], {"default": "center_face"}),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID"
             },
         }
 
-    RETURN_TYPES = ("MODEL",)
+    RETURN_TYPES = ("MODEL", "IMAGE")
+    RETURN_NAMES = ("model", "face_used")
     FUNCTION = "apply_pulid_flux"
     CATEGORY = "pulid"
 
     def __init__(self):
         self.pulid_data_dict = None
 
-    def apply_pulid_flux(self, model, pulid_flux, eva_clip, face_analysis, image, weight, start_at, end_at, attn_mask=None, unique_id=None):
+    def apply_pulid_flux(self, model, pulid_flux, eva_clip, face_analysis, image, weight, start_at, end_at, attn_mask=None, unique_id=None, source_face_selection="center_face"):
         device = comfy.model_management.get_torch_device()
         # Why should I care what args say, when the unet model has a different dtype?!
         # Am I missing something?!
@@ -293,6 +336,7 @@ class ApplyPulidFlux:
 
         bg_label = [0, 16, 18, 7, 8, 9, 14, 15]
         cond = []
+        align_faces = []
 
         # Analyse multiple images at multiple sizes and combine largest area embeddings
         for i in range(image.shape[0]):
@@ -317,7 +361,10 @@ class ApplyPulidFlux:
             # get eva_clip embeddings
             face_helper.clean_all()
             face_helper.read_image(image[i])
-            face_helper.get_face_landmarks_5(only_center_face=True)
+            if source_face_selection == "largest_face":
+                face_helper.get_face_landmarks_5(only_keep_largest=True)
+            else:
+                face_helper.get_face_landmarks_5(only_center_face=True)
             face_helper.align_warp_face()
 
             if len(face_helper.cropped_faces) == 0:
@@ -353,6 +400,7 @@ class ApplyPulidFlux:
 
             # Pulid_encoder
             cond.append(pulid_flux.get_embeds(id_cond, id_vit_hidden))
+            align_faces.append(align_face.permute(0, 2, 3, 1))
 
         if not cond:
             # No faces detected, return the original model
@@ -394,8 +442,9 @@ class ApplyPulidFlux:
 
         # Keep a reference for destructor (if node is deleted the data will be deleted as well)
         self.pulid_data_dict = {'data': flux_model.pulid_data, 'unique_id': unique_id}
-
-        return (model,)
+        
+        align_faces = torch.cat(align_faces)
+        return (model, align_faces)
 
     def __del__(self):
         # Destroy the data for this node
