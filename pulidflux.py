@@ -211,8 +211,8 @@ class PulidFluxEvaClipLoader:
 
     def load_eva_clip(self):
         from .eva_clip.factory import create_model_and_transforms
-
-        model, _, _ = create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip', force_custom_clip=True)
+        model_path = os.path.join(folder_paths.models_dir, "eva_clip", "EVA02_CLIP_L_336_psz14_s6B.pt")
+        model, _, _ = create_model_and_transforms('EVA02-CLIP-L-14-336', model_path, force_custom_clip=True)
 
         model = model.visual
 
@@ -279,6 +279,7 @@ class ApplyPulidFlux:
 
         image = tensor_to_image(image)
 
+        facexlib_model_path = os.path.join(folder_paths.models_dir, "facexlib")
         face_helper = FaceRestoreHelper(
             upscale_factor=1,
             face_size=512,
@@ -286,10 +287,11 @@ class ApplyPulidFlux:
             det_model='retinaface_resnet50',
             save_ext='png',
             device=device,
+            model_rootpath=facexlib_model_path,
         )
 
         face_helper.face_parse = None
-        face_helper.face_parse = init_parsing_model(model_name='bisenet', device=device)
+        face_helper.face_parse = init_parsing_model(model_name='bisenet', device=device, model_rootpath=facexlib_model_path)
 
         bg_label = [0, 16, 18, 7, 8, 9, 14, 15]
         cond = []
