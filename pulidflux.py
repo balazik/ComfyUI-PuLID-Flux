@@ -211,8 +211,8 @@ class PulidFluxEvaClipLoader:
 
     def load_eva_clip(self):
         from .eva_clip.factory import create_model_and_transforms
-
-        model, _, _ = create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip', force_custom_clip=True)
+        model_path = os.path.join(folder_paths.models_dir, "eva_clip", "EVA02-CLIP-L-14-336.pth")
+        model, _, _ = create_model_and_transforms('EVA02-CLIP-L-14-336', model_path, force_custom_clip=True)
 
         model = model.visual
 
@@ -224,7 +224,6 @@ class PulidFluxEvaClipLoader:
             model["image_std"] = (eva_transform_std,) * 3
 
         return (model,)
-
 class ApplyPulidFlux:
     @classmethod
     def INPUT_TYPES(s):
