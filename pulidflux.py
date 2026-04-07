@@ -357,6 +357,14 @@ class ApplyPulidFlux:
         if not cond:
             # No faces detected, return the original model
             logging.warning("PuLID warning: No faces detected in any of the given images, returning unmodified model.")
+            # Cleanup face_helper to prevent CUDA state leak between consecutive runs
+            try:
+                face_helper.face_det = face_helper.face_det.cpu()
+                face_helper.face_parse = face_helper.face_parse.cpu()
+                del face_helper
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
             return (model,)
 
         # average embeddings
@@ -394,6 +402,15 @@ class ApplyPulidFlux:
 
         # Keep a reference for destructor (if node is deleted the data will be deleted as well)
         self.pulid_data_dict = {'data': flux_model.pulid_data, 'unique_id': unique_id}
+
+        # Cleanup face_helper to prevent CUDA state leak between consecutive runs
+        try:
+            face_helper.face_det = face_helper.face_det.cpu()
+            face_helper.face_parse = face_helper.face_parse.cpu()
+            del face_helper
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         return (model,)
 
